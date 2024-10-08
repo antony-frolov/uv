@@ -22,6 +22,7 @@ use uv_distribution_types::{
 use uv_fs::Simplified;
 use uv_git::GitResolver;
 use uv_install_wheel::linker::LinkMode;
+use uv_installer::{SitePackages};
 use uv_normalize::PackageName;
 use uv_pypi_types::{Requirement, SupportedEnvironments};
 use uv_python::{
@@ -36,7 +37,7 @@ use uv_resolver::{
     InMemoryIndex, OptionsBuilder, PrereleaseMode, PythonRequirement, RequiresPython,
     ResolutionMode, ResolverMarkers,
 };
-use uv_types::{BuildIsolation, EmptyInstalledPackages, HashStrategy, InFlight};
+use uv_types::{BuildIsolation, HashStrategy, InFlight};
 use uv_warnings::warn_user;
 
 use crate::commands::pip::loggers::DefaultResolveLogger;
@@ -309,14 +310,12 @@ pub(crate) async fn pip_compile(
     let in_flight = InFlight::default();
 
     // Determine whether to enable build isolation.
-    let environment;
+    let environment = PythonEnvironment::from_interpreter(interpreter.clone());
     let build_isolation = if no_build_isolation {
-        environment = PythonEnvironment::from_interpreter(interpreter.clone());
         BuildIsolation::Shared(&environment)
     } else if no_build_isolation_package.is_empty() {
         BuildIsolation::Isolated
     } else {
-        environment = PythonEnvironment::from_interpreter(interpreter.clone());
         BuildIsolation::SharedPackage(&environment, &no_build_isolation_package)
     };
 
@@ -359,6 +358,8 @@ pub(crate) async fn pip_compile(
         .index_strategy(index_strategy)
         .build();
 
+    let site_packages = SitePackages::from_environment(&environment)?;
+
     // Resolve the requirements.
     let resolution = match operations::resolve(
         requirements,
@@ -370,7 +371,7 @@ pub(crate) async fn pip_compile(
         None,
         &extras,
         preferences,
-        EmptyInstalledPackages,
+        site_packages,
         &hasher,
         &Reinstall::None,
         &upgrade,
